@@ -7,7 +7,84 @@ provider "aws" {
   }
 }
 
-resource "aws_s3_bucket" "my_bucket" {
-  bucket = "prox-bronze-layer"
+# Raw data bucket
+resource "aws_s3_bucket" "bronze" {
+  bucket = "prox-bronze-bucket"
+  force_destroy = true
+}
+
+# Curated data bucket
+resource "aws_s3_bucket" "silver" {
+  bucket = "prox-silver-bucket"
+  force_destroy = true
+}
+
+# Processed data bucket
+resource "aws_s3_bucket" "gold" {
+  bucket = "prox-gold-bucket"
+  force_destroy = true
+}
+
+# Glue Catalog Database
+resource "aws_glue_catalog_database" "lakehouse" {
+  name = "prox_lakehouse"
+}
+
+# Bronze Glue Crawler
+resource "aws_glue_crawler" "bronze_crawler" {
+  name          = "bronze-crawler"
+  role          = aws_iam_role.glue_service_role.arn
+  database_name = aws_glue_catalog_database.lakehouse.name
+  s3_target {
+    path = "s3://${aws_s3_bucket.bronze.bucket}/"
+  }
+  depends_on = [aws_s3_bucket.bronze]
+}
+
+# Silver Glue Crawler
+resource "aws_glue_crawler" "silver_crawler" {
+  name          = "silver-crawler"
+  role          = aws_iam_role.glue_service_role.arn
+  database_name = aws_glue_catalog_database.lakehouse.name
+  s3_target {
+    path = "s3://${aws_s3_bucket.silver.bucket}/"
+  }
+  depends_on = [aws_s3_bucket.silver]
+}
+
+# bronze_ingestion script location
+resource "aws_s3_object" "bronze_ingestion_script" {
+  bucket = aws_s3_bucket.bronze.bucket
+  key    = "scripts/bronze_ingestion_script.py"
+  source = "${path.module}/glue_scripts/bronze_ingestion_script.py" # Ensure this file exists in your Terraform directory
+  etag   = filemd5("${path.module}/glue_scripts/bronze_ingestion_script.py")
+}
+
+# Glue job to load data from rds to bronze
+resource "aws_glue_job" "bronze_ingestion_job" {
+  name = "bronze-ingestion-job"
+  role_arn = aws_iam_role.glue_service_role.arn
+  glue_version = "4.0"  
+  worker_type  = "G.1X" 
+  number_of_workers = 2 
+
+  command {
+    name = "glueetl"
+    script_location = "s3://${aws_s3_bucket.bronze.bucket}/scripts/bronze_ingestion_script.py"
+  }
+  default_arguments = {
+    "--job-language" = "python"
+    "--TempDir" = "s3://${aws_s3_bucket.bronze.bucket}/temp/"
+    "--enable-metrics"  = ""
+    "--enable-spark-ui"    = "true"
+  }
+  depends_on = [aws_s3_object.bronze_ingestion_script]
+}
+
+
+
+# Sns Topic for notifications
+resource "aws_sns_topic" "notifications" {
+  name = "prox-notifications"
 }
 
