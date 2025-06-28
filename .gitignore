@@ -1,1 +1,23 @@
 architecture.drawio
+terraform.tfvars
+
+# Terraform module dependencies
+.terraform.d/
+modules/
+.terraform/plugins/
+.terraform/providers/
+# Local Terraform directories
+
+.terraform/
+terraform.tfstate.backup
+terraform.tfstate.d/
+# Sensitive Terraform files
+
+*.auto.tfvars
+*.auto.tfvars.json
+secret.tfvars
+terraform.tfvars.json
+
+# Terraform plan output
+plan.out
+plan.json
