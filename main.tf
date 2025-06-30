@@ -62,22 +62,32 @@ resource "aws_s3_object" "bronze_ingestion_script" {
 
 # Glue job to load data from rds to bronze
 resource "aws_glue_job" "bronze_ingestion_job" {
-  name = "bronze-ingestion-job"
-  role_arn = aws_iam_role.glue_service_role.arn
-  glue_version = "4.0"  
-  worker_type  = "G.1X" 
-  number_of_workers = 2 
+  name            = "bronze-ingestion-job"
+  role_arn        = aws_iam_role.glue_service_role.arn
+  glue_version    = "4.0"
+  worker_type     = "G.1X"
+  number_of_workers = 2
 
   command {
-    name = "glueetl"
+    name            = "glueetl"
     script_location = "s3://${aws_s3_bucket.bronze.bucket}/scripts/bronze_ingestion_script.py"
   }
+
   default_arguments = {
-    "--job-language" = "python"
-    "--TempDir" = "s3://${aws_s3_bucket.bronze.bucket}/temp/"
-    "--enable-metrics"  = ""
-    "--enable-spark-ui"    = "true"
+    "--job-language"      = "python"
+    "--TempDir"           = "s3://${aws_s3_bucket.bronze.bucket}/temp/"
+    "--enable-metrics"    = ""
+    "--enable-spark-ui"   = "true"
+    "--JOB_NAME"          = "bronze-ingestion-job"
+    "--RDS_HOST"          = var.rds_host
+    "--RDS_PORT"          = var.rds_port
+    "--RDS_DB_NAME"       = var.rds_db_name
+    "--RDS_USERNAME"      = var.rds_username
+    "--RDS_PASSWORD"      = var.rds_password
+    "--S3_OUTPUT_BUCKET"  = aws_s3_bucket.bronze.bucket
+    "--TABLES_TO_EXTRACT" = var.tables_to_extract
   }
+
   depends_on = [aws_s3_object.bronze_ingestion_script]
 }
 
