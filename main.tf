@@ -99,7 +99,31 @@ resource "aws_glue_job" "bronze_ingestion_job" {
   depends_on = [aws_s3_object.bronze_ingestion_script]
 }
 
+# Glue job for transformations
+resource "aws_glue_job" "transformations_job" {
+  name            = "transformations-job"
+  role_arn        = aws_iam_role.glue_service_role.arn
+  glue_version    = "4.0"
+  worker_type     = "G.1X"
+  number_of_workers = 2
 
+  command {
+    name            = "glueetl"
+    script_location = "s3://${aws_s3_bucket.bronze.bucket}/scripts/transformations_script.py"
+  }
+
+  default_arguments = {
+    "--job-language"        = "python"
+    "--TempDir"             = "s3://${aws_s3_bucket.silver.bucket}/temp/"
+    "--enable-metrics"      = ""
+    "--enable-spark-ui"     = "true"
+    "--JOB_NAME"            = "transformations-job"
+    "--SOURCE_DATABASE"     = aws_glue_catalog_database.lakehouse.name
+    "--TARGET_S3_BASE_PATH" = "s3://${aws_s3_bucket.silver.bucket}/curated"
+  }
+
+  depends_on = [aws_s3_object.transformations_script]
+}
 
 # Sns Topic for notifications
 resource "aws_sns_topic" "notifications" {
