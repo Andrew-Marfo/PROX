@@ -60,6 +60,14 @@ resource "aws_s3_object" "bronze_ingestion_script" {
   etag   = filemd5("${path.module}/glue_scripts/bronze_ingestion_script.py")
 }
 
+# transformations_script location
+resource "aws_s3_object" "transformations_script" {
+  bucket = aws_s3_bucket.bronze.bucket
+  key    = "scripts/transformations_script.py"
+  source = "${path.module}/glue_scripts/transformations_script.py"
+  etag   = filemd5("${path.module}/glue_scripts/transformations_script.py")
+}
+
 # Glue job to load data from rds to bronze
 resource "aws_glue_job" "bronze_ingestion_job" {
   name            = "bronze-ingestion-job"
