@@ -36,7 +36,7 @@ resource "aws_glue_crawler" "bronze_crawler" {
   role          = aws_iam_role.glue_service_role.arn
   database_name = aws_glue_catalog_database.lakehouse.name
   s3_target {
-    path = "s3://${aws_s3_bucket.bronze.bucket}/"
+    path = "s3://${aws_s3_bucket.bronze.bucket}/prox/"
   }
   depends_on = [aws_s3_bucket.bronze]
 }
@@ -47,7 +47,7 @@ resource "aws_glue_crawler" "silver_crawler" {
   role          = aws_iam_role.glue_service_role.arn
   database_name = aws_glue_catalog_database.lakehouse.name
   s3_target {
-    path = "s3://${aws_s3_bucket.silver.bucket}/"
+    path = "s3://${aws_s3_bucket.silver.bucket}/prox/"
   }
   depends_on = [aws_s3_bucket.silver]
 }
@@ -93,7 +93,7 @@ resource "aws_glue_job" "bronze_ingestion_job" {
     "--RDS_USERNAME"      = var.rds_username
     "--RDS_PASSWORD"      = var.rds_password
     "--S3_OUTPUT_BUCKET"  = aws_s3_bucket.bronze.bucket
-    "--TABLES_TO_EXTRACT" = var.tables_to_extract
+    "--TABLES_TO_EXTRACT" = var.db_tables
   }
 
   depends_on = [aws_s3_object.bronze_ingestion_script]
@@ -119,7 +119,8 @@ resource "aws_glue_job" "transformations_job" {
     "--enable-spark-ui"     = "true"
     "--JOB_NAME"            = "transformations-job"
     "--SOURCE_DATABASE"     = aws_glue_catalog_database.lakehouse.name
-    "--TARGET_S3_BASE_PATH" = "s3://${aws_s3_bucket.silver.bucket}/curated"
+    "--S3_OUTPUT_BUCKET"    = aws_s3_bucket.silver.bucket
+    "--DB_TABLES"           = var.db_tables
   }
 
   depends_on = [aws_s3_object.transformations_script]
