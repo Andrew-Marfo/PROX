@@ -29,7 +29,7 @@ variable "rds_password" {
   sensitive   = true
 }
 
-variable "tables_to_extract" {
+variable "db_tables" {
   description = "Comma-separated list of tables to extract from RDS"
   type        = string
 }
