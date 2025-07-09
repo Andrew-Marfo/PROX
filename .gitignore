@@ -21,9 +21,3 @@ terraform.tfvars.json
 # Terraform plan output
 plan.out
 plan.json
-
-dummy_services_data_generation.py
-categories.csv
-service_providers.csv
-services.csv
-users.csv
