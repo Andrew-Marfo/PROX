@@ -4,7 +4,6 @@ from awsglue.utils import getResolvedOptions
 from pyspark.context import SparkContext
 from awsglue.context import GlueContext
 from awsglue.job import Job
-import boto3
 
 # Initialize Glue context
 sc = SparkContext()
@@ -21,7 +20,7 @@ args = getResolvedOptions(sys.argv, [
     'RDS_USERNAME',
     'RDS_PASSWORD',
     'S3_OUTPUT_BUCKET',
-    'TABLES_TO_EXTRACT'
+    'DB_TABLES'
 ])
 
 # Database connection details
@@ -36,7 +35,7 @@ connection_properties = {
 s3_output_bucket = args['S3_OUTPUT_BUCKET']
 
 # Tables to extract (passed as comma-separated list)
-tables = args['TABLES_TO_EXTRACT'].split(',')
+tables = args['DB_TABLES'].split(',')
 
 # Process each table
 for table in tables:
