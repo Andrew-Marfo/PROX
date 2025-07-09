@@ -15,7 +15,8 @@ logger = logging.getLogger(__name__)
 args = getResolvedOptions(sys.argv, [
     'JOB_NAME',
     'SOURCE_DATABASE',
-    'TARGET_S3_BASE_PATH'
+    'S3_OUTPUT_BUCKET',
+    'DB_TABLES'
 ])
 
 # Initialize Glue context
@@ -72,8 +73,8 @@ schemas = {
     ])
 }
 
-# List of tables to process
-tables = schemas.keys()
+# Tables to extract (passed as comma-separated list)
+tables = args['DB_TABLES'].split(',')
 
 # Loop through and process each table
 for table_name in tables:
@@ -94,7 +95,7 @@ for table_name in tables:
         validated_df = spark.createDataFrame(df.rdd, schema=schema)
 
         # Write to curated S3
-        target_path = f"{args['TARGET_S3_BASE_PATH']}/{table_name}/"
+        target_path = f"s3://{args['S3_OUTPUT_BUCKET']}/{table_name}/"
         validated_df.write.mode("overwrite").parquet(target_path)
 
         logger.info(f"✅ Successfully processed {table_name} to {target_path}")
