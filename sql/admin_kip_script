@@ -1,0 +1,36 @@
+-- Most active service categories this week
+SELECT 
+  c.category_name,
+  COUNT(b.booking_id) AS total_bookings
+FROM bookings b
+JOIN services s ON b.service_id = s.service_id
+JOIN categories c ON s.category_id = c.category_id
+WHERE b.scheduled_date >= date_trunc('week', CURRENT_DATE)
+GROUP BY c.category_name
+ORDER BY total_bookings DESC
+LIMIT 5;
+
+-- Top service providers by bookings
+SELECT 
+  sp.provider_id,
+  sp.business_name,
+  COUNT(b.booking_id) AS total_bookings
+FROM service_providers sp
+JOIN services s ON sp.provider_id = s.provider_id
+JOIN bookings b ON s.service_id = b.service_id
+GROUP BY sp.provider_id, sp.business_name
+ORDER BY total_bookings DESC
+LIMIT 5;
+
+-- Top disputed providers
+SELECT 
+  sp.provider_id,
+  sp.business_name,
+  COUNT(d.dispute_id) AS dispute_count
+FROM service_providers sp
+JOIN services s ON sp.provider_id = s.provider_id
+JOIN bookings b ON s.service_id = b.service_id
+JOIN dispute_requests d ON b.booking_id = d.booking_id
+GROUP BY sp.provider_id, sp.business_name
+ORDER BY dispute_count DESC
+LIMIT 5;
