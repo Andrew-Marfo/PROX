@@ -93,7 +93,7 @@ resource "aws_glue_job" "bronze_ingestion_job" {
     "--RDS_USERNAME"      = var.rds_username
     "--RDS_PASSWORD"      = var.rds_password
     "--S3_OUTPUT_BUCKET"  = aws_s3_bucket.bronze.bucket
-    "--TABLES_TO_EXTRACT" = var.db_tables
+    "--DB_TABLES" = var.db_tables
   }
 
   depends_on = [aws_s3_object.bronze_ingestion_script]
