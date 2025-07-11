@@ -1,0 +1,153 @@
+-- USERS TABLE
+CREATE TABLE users (
+  user_id SERIAL PRIMARY KEY,
+  email VARCHAR(255) NOT NULL UNIQUE,
+  password VARCHAR(255) NOT NULL,
+  first_name VARCHAR(100) NOT NULL,
+  last_name VARCHAR(100) NOT NULL,
+  role VARCHAR(20) CHECK (role IN ('service_provider', 'service_seeker', 'admin')),
+  profile_picture VARCHAR(255),
+  phone_number VARCHAR(20) NOT NULL,
+  status VARCHAR(20) CHECK (status IN ('fresh', 'verified', 'suspended', 'active', 'deleted')),
+  googleId VARCHAR(255),
+  created_at TIMESTAMP,
+  updated_at TIMESTAMP
+);
+
+-- SERVICE PROVIDERS
+CREATE TABLE service_providers (
+  provider_id SERIAL PRIMARY KEY,
+  user_id INT REFERENCES users(user_id),
+  business_name VARCHAR(255),
+  email VARCHAR(255) NOT NULL UNIQUE,
+  phone_number VARCHAR(20) NOT NULL,
+  description TEXT,
+  location VARCHAR(255),
+  verificationStatus VARCHAR(50),
+  is_ai_generated BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP,
+  updated_at TIMESTAMP
+);
+
+-- CATEGORIES
+CREATE TABLE categories (
+  category_id SERIAL PRIMARY KEY,
+  category_name VARCHAR(100),
+  created_at TIMESTAMP,
+  updated_at TIMESTAMP
+);
+
+-- PROVIDER CATEGORIES
+CREATE TABLE provider_categories (
+  provider_id INT,
+  category_id INT,
+  created_at TIMESTAMP,
+  PRIMARY KEY (provider_id, category_id),
+  FOREIGN KEY (provider_id) REFERENCES service_providers(provider_id),
+  FOREIGN KEY (category_id) REFERENCES categories(category_id)
+);
+
+-- SERVICES
+CREATE TABLE services (
+  service_id SERIAL PRIMARY KEY,
+  provider_id INT REFERENCES service_providers(provider_id),
+  category_id INT REFERENCES categories(category_id),
+  service_name VARCHAR(255),
+  description TEXT,
+  price DECIMAL(10, 2),
+  availability JSON,
+  created_at TIMESTAMP,
+  updated_at TIMESTAMP
+);
+
+-- PROVIDER REVIEWS
+CREATE TABLE provider_reviews (
+  review_id SERIAL PRIMARY KEY,
+  provider_id INT REFERENCES service_providers(provider_id),
+  user_id INT REFERENCES users(user_id),
+  rating INT,
+  comment TEXT,
+  created_at TIMESTAMP
+);
+
+-- JOB REVIEWS
+CREATE TABLE job_reviews (
+  review_id SERIAL PRIMARY KEY,
+  booking_id INT,
+  comment TEXT,
+  created_at TIMESTAMP
+);
+
+-- BOOKINGS
+CREATE TABLE bookings (
+  booking_id SERIAL PRIMARY KEY,
+  service_id INT REFERENCES services(service_id),
+  user_id INT REFERENCES users(user_id),
+  quote_id INT,
+  image_id INT,
+  description VARCHAR(255),
+  status VARCHAR(20) CHECK (status IN ('pending', 'accepted', 'In Progress', 'completed', 'declined')),
+  scheduled_date TIMESTAMP,
+  comment TEXT,
+  created_at TIMESTAMP
+);
+
+-- PAYMENT RECORDS
+CREATE TABLE payment_records (
+  payment_record_id SERIAL PRIMARY KEY,
+  booking_id INT REFERENCES bookings(booking_id),
+  payment_id INT,
+  amount DECIMAL(10, 2),
+  status VARCHAR(20) CHECK (status IN ('pending', 'paid', 'failed', 'refunded')),
+  created_at TIMESTAMP,
+  updated_at TIMESTAMP
+);
+
+-- DISPUTE REQUESTS
+CREATE TABLE dispute_requests (
+  dispute_id SERIAL PRIMARY KEY,
+  booking_id INT REFERENCES bookings(booking_id),
+  user_id INT REFERENCES users(user_id),
+  reason TEXT,
+  status VARCHAR(20) CHECK (status IN ('open', 'resolved', 'closed')),
+  created_at TIMESTAMP,
+  updated_at TIMESTAMP
+);
+
+-- QUOTE REQUESTS
+CREATE TABLE quote_requests (
+  quote_request_id SERIAL PRIMARY KEY,
+  user_id INT REFERENCES users(user_id),
+  category_id INT REFERENCES categories(category_id),
+  image_id INT,
+  title VARCHAR(255),
+  description TEXT,
+  budget_range VARCHAR(100),
+  timeline VARCHAR(100),
+  scheduled_date DATE,
+  created_at TIMESTAMP,
+  status VARCHAR(20) CHECK (status IN ('pending', 'accepted', 'rejected'))
+);
+
+-- QUOTES
+CREATE TABLE quotes (
+  quote_id SERIAL PRIMARY KEY,
+  quote_request_id INT REFERENCES quote_requests(quote_request_id),
+  provider_id INT REFERENCES service_providers(provider_id),
+  amount DECIMAL(10, 2),
+  details TEXT,
+  expire_date TIMESTAMP,
+  tax DECIMAL(10, 2),
+  created_at TIMESTAMP,
+  status VARCHAR(20) CHECK (status IN ('pending', 'accepted', 'rejected'))
+);
+
+-- OPTIONAL: CALENDAR BLOCKS
+CREATE TABLE calendar_blocks (
+  block_id SERIAL PRIMARY KEY,
+  provider_id INT REFERENCES service_providers(provider_id),
+  start_time TIMESTAMP,
+  end_time TIMESTAMP,
+  description TEXT,
+  created_at TIMESTAMP
+);
