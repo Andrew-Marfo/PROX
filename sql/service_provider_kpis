@@ -1,0 +1,36 @@
+-- Most in-demand services in their area
+SELECT 
+  sp.location,
+  s.service_name,
+  COUNT(b.booking_id) AS request_count
+FROM service_providers sp
+JOIN services s ON sp.provider_id = s.provider_id
+JOIN bookings b ON s.service_id = b.service_id
+GROUP BY sp.location, s.service_name
+ORDER BY request_count DESC;
+
+-- Average customer rating
+SELECT 
+  provider_id,
+  AVG(rating) AS avg_rating
+FROM provider_reviews
+GROUP BY provider_id;
+
+-- Monthly revenue trend
+SELECT 
+  DATE_TRUNC('month', created_at) AS month,
+  provider_id,
+  SUM(amount) AS revenue
+FROM payment_records pr
+JOIN bookings b ON pr.booking_id = b.booking_id
+JOIN services s ON b.service_id = s.service_id
+GROUP BY month, provider_id
+ORDER BY month;
+
+-- % of providers using AI-generated profiles
+SELECT 
+  ROUND(
+    100.0 * SUM(CASE WHEN is_ai_generated = true THEN 1 ELSE 0 END) / COUNT(*), 
+    2
+  ) AS ai_usage_percentage
+FROM service_providers;

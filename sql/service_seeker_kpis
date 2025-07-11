@@ -1,0 +1,10 @@
+-- Highest rated providers nearby
+SELECT 
+  sp.business_name,
+  sp.location,
+  AVG(r.rating) AS avg_rating
+FROM service_providers sp
+JOIN provider_reviews r ON sp.provider_id = r.provider_id
+GROUP BY sp.business_name, sp.location
+ORDER BY avg_rating DESC
+LIMIT 5;
