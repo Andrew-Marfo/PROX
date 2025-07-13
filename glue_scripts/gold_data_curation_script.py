@@ -67,7 +67,7 @@ fact_booking_df = bookings_df.alias("b") \
 # Filter invalid records
 fact_booking_df = fact_booking_df.filter(col("booking_id").isNotNull())
 
-# Write to star schema S3 bucket
+# Write FactsBooking to S3 in Parquet format
 fact_booking_df.write.mode("overwrite").parquet(output_path)
 print("✅ FactBooking table generated and saved.")
 
@@ -91,6 +91,50 @@ dim_date_df = date_df \
     .withColumn("day_of_week", date_format("date", "u").cast("int")) \
     .withColumn("day_name", date_format("date", "EEEE")) \
     .withColumn("is_weekend", col("day_of_week").isin([6, 7]))
+
+# Write DimDate to S3 in Parquet format
+dim_date_output_path = f"s3://{output_bucket}/star_schema/dim_date/"
+dim_date_df.write.mode("overwrite").parquet(dim_date_output_path)
+print("✅ DimDate table generated and saved.")
+
+# DimUser
+
+# Load users and service_providers from Glue Catalog
+users_df = glueContext.create_dynamic_frame.from_catalog(
+    database=database_name,
+    table_name="users"
+).toDF()
+
+providers_df = glueContext.create_dynamic_frame.from_catalog(
+    database=database_name,
+    table_name="service_providers"
+).toDF()
+
+# Join users with service_providers on user_id (left join since not all users are providers)
+dim_user_df = users_df.alias("u") \
+    .join(providers_df.alias("p"), col("u.user_id") == col("p.user_id"), "left") \
+    .select(
+        col("u.user_id"),
+        col("u.first_name"),
+        col("u.last_name"),
+        col("u.role"),
+        col("u.phone_number"),
+        col("u.email"),
+        col("p.provider_id"),
+        col("p.business_name"),
+        col("p.verificationStatus").alias("verification_status"),
+        col("p.is_ai_generated"),
+        col("u.created_at")
+    ) \
+    .withColumn("full_name", col("first_name") + " " + col("last_name")) \
+    .drop("first_name", "last_name")
+
+# Write DimUser to S3
+dim_user_output_path = f"s3://{output_bucket}/star_schema/dim_user/"
+dim_user_df.write.mode("overwrite").parquet(dim_user_output_path)
+print("✅ DimUser table generated and saved.")
+
+
 
 # Commit the job
 job.commit()
