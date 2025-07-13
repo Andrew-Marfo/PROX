@@ -5,7 +5,8 @@ from awsglue.context import GlueContext
 from pyspark.context import SparkContext
 from awsglue.job import Job
 from pyspark.sql.types import *
-from pyspark.sql.functions import col, date_format, dayofmonth, month, quarter, year, explode
+from pyspark.sql.functions import col, date_format, dayofmonth, month, quarter, year, explode, row_number
+from pyspark.sql import Window
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO)
@@ -166,6 +167,26 @@ dim_service_df = services_df.alias("s") \
 dim_service_output_path = f"s3://{output_bucket}/star_schema/dim_service/"
 dim_service_df.write.mode("overwrite").parquet(dim_service_output_path)
 print("✅ DimService table generated and saved.")
+
+# DimLocation
+
+service_providers_df = glueContext.create_dynamic_frame.from_catalog(
+    database=database_name,
+    table_name="service_providers"
+).toDF()
+
+# Get distinct locations
+location_df = service_providers_df \
+    .select("location") \
+    .filter(col("location").isNotNull()) \
+    .distinct() \
+    .withColumn("location_id", row_number().over(Window.orderBy("location"))) \
+    .select("location_id", "location")
+
+# Write DimLocation to S3
+dim_location_output_path = f"s3://{output_bucket}/star_schema/dim_location/"
+location_df.write.mode("overwrite").parquet(dim_location_output_path)
+print("✅ DimLocation table generated and saved.")
 
 
 # Commit the job
