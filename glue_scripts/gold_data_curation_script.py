@@ -134,6 +134,38 @@ dim_user_output_path = f"s3://{output_bucket}/star_schema/dim_user/"
 dim_user_df.write.mode("overwrite").parquet(dim_user_output_path)
 print("✅ DimUser table generated and saved.")
 
+# DimService
+
+# Load services and categories
+services_df = glueContext.create_dynamic_frame.from_catalog(
+    database=database_name,
+    table_name="services"
+).toDF()
+
+categories_df = glueContext.create_dynamic_frame.from_catalog(
+    database=database_name,
+    table_name="categories"
+).toDF()
+
+# Join to enrich service with category name
+dim_service_df = services_df.alias("s") \
+    .join(categories_df.alias("c"), col("s.category_id") == col("c.category_id"), "left") \
+    .select(
+        col("s.service_id"),
+        col("s.provider_id"),
+        col("s.category_id"),
+        col("c.category_name"),
+        col("s.service_name"),
+        col("s.description"),
+        col("s.price"),
+        col("s.created_at"),
+        col("s.updated_at")
+    )
+
+# Write DimService to S3
+dim_service_output_path = f"s3://{output_bucket}/star_schema/dim_service/"
+dim_service_df.write.mode("overwrite").parquet(dim_service_output_path)
+print("✅ DimService table generated and saved.")
 
 
 # Commit the job
