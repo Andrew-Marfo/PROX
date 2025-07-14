@@ -5,7 +5,7 @@ from awsglue.context import GlueContext
 from pyspark.context import SparkContext
 from awsglue.job import Job
 from pyspark.sql.types import *
-from pyspark.sql.functions import col, date_format, dayofmonth, month, quarter, year, explode, row_number
+from pyspark.sql.functions import col, date_format, dayofmonth, month, quarter, year, explode, row_number, lit
 from pyspark.sql import Window
 
 # Initialize logging
@@ -188,6 +188,78 @@ dim_location_output_path = f"s3://{output_bucket}/star_schema/dim_location/"
 location_df.write.mode("overwrite").parquet(dim_location_output_path)
 print("✅ DimLocation table generated and saved.")
 
+# DimDispute
+
+disputes_df = glueContext.create_dynamic_frame.from_catalog(
+    database=database_name,
+    table_name="dispute_requests"
+).toDF()
+
+dim_dispute_df = disputes_df \
+    .select(
+        col("dispute_id"),
+        col("booking_id"),
+        col("user_id"),
+        col("reason"),
+        col("status").alias("dispute_status"),
+        col("created_at"),
+        col("updated_at")
+    ) \
+    .filter(col("dispute_id").isNotNull())
+
+# Write DimDispute to S3 in Parquet format
+dim_dispute_output_path = f"s3://{output_bucket}/star_schema/dim_dispute/"
+dim_dispute_df.write.mode("overwrite").parquet(dim_dispute_output_path)
+print("✅ DimDispute table generated and saved.")
+
+# DimReview
+
+# Read both provider_reviews and job_reviews
+provider_reviews_df = glueContext.create_dynamic_frame.from_catalog(
+    database=database_name,
+    table_name="provider_reviews"
+).toDF()
+
+job_reviews_df = glueContext.create_dynamic_frame.from_catalog(
+    database=database_name,
+    table_name="job_reviews"
+).toDF()
+
+# Transform provider reviews
+provider_reviews_transformed = provider_reviews_df \
+    .select(
+        col("review_id"),
+        col("user_id"),
+        col("provider_id"),
+        col("rating"),
+        col("comment"),
+        col("created_at")
+    ) \
+    .withColumn("review_type", lit("provider")) \
+    .withColumn("booking_id", lit(None).cast("int"))  # Not applicable
+
+# Transform job reviews
+job_reviews_transformed = job_reviews_df \
+    .select(
+        col("review_id"),
+        col("booking_id"),
+        col("comment"),
+        col("created_at")
+    ) \
+    .withColumn("review_type", lit("job")) \
+    .withColumn("user_id", lit(None).cast("int")) \
+    .withColumn("provider_id", lit(None).cast("int")) \
+    .withColumn("rating", lit(None).cast("int"))
+
+# Union the two
+dim_review_df = provider_reviews_transformed.unionByName(job_reviews_transformed)
+
+# Write to S3
+dim_review_output_path = f"s3://{output_bucket}/star_schema/dim_review/"
+dim_review_df.write.mode("overwrite").parquet(dim_review_output_path)
+print("✅ DimReview table generated and saved.")
+
 
 # Commit the job
 job.commit()
+
