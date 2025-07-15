@@ -37,7 +37,9 @@ resource "aws_iam_policy" "glue_s3_access" {
         "arn:aws:s3:::prox-bronze-bucket",
         "arn:aws:s3:::prox-bronze-bucket/*",
         "arn:aws:s3:::prox-silver-bucket",
-        "arn:aws:s3:::prox-silver-bucket/*"
+        "arn:aws:s3:::prox-silver-bucket/*",
+        "arn:aws:s3:::prox-gold-bucket",
+        "arn:aws:s3:::prox-gold-bucket/*"
       ]
     }]
   })

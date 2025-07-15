@@ -131,3 +131,37 @@ resource "aws_sns_topic" "notifications" {
   name = "prox-notifications"
 }
 
+# gold_data_curation_script location
+resource "aws_s3_object" "gold_data_curation_script" {
+  bucket = aws_s3_bucket.gold.bucket
+  key    = "scripts/gold_data_curation_script.py"
+  source = "${path.module}/glue_scripts/gold_data_curation_script.py"
+  etag   = filemd5("${path.module}/glue_scripts/gold_data_curation_script.py")
+}
+
+# Glue job for gold data curation
+resource "aws_glue_job" "gold_data_curation_job" {
+  name              = "gold-data-curation-job"
+  role_arn          = aws_iam_role.glue_service_role.arn
+  glue_version      = "4.0"
+  worker_type       = "G.1X"
+  number_of_workers = 2
+
+  command {
+    name            = "glueetl"
+    script_location = "s3://${aws_s3_bucket.gold.bucket}/scripts/gold_data_curation_script.py"
+  }
+
+  default_arguments = {
+    "--job-language"     = "python"
+    "--TempDir"          = "s3://${aws_s3_bucket.gold.bucket}/temp/"
+    "--enable-metrics"   = ""
+    "--enable-spark-ui"  = "true"
+    "--JOB_NAME"         = "gold-data-curation-job"
+    "--SOURCE_DATABASE"  = aws_glue_catalog_database.lakehouse.name
+    "--S3_OUTPUT_BUCKET" = aws_s3_bucket.gold.bucket
+  }
+
+  depends_on = [aws_s3_object.gold_data_curation_script]
+}
+
