@@ -95,3 +95,23 @@ resource "aws_iam_role_policy_attachment" "glue_catalog" {
   role       = aws_iam_role.glue_service_role.name
   policy_arn = aws_iam_policy.glue_catalog.arn
 }
+
+# 6. IAM Role for Redshift
+resource "aws_iam_role" "redshift_role" {
+  name = "prox-redshift-role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Effect = "Allow",
+      Principal = {
+        Service = "redshift.amazonaws.com"
+      },
+      Action = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "redshift_s3_access" {
+  role       = aws_iam_role.redshift_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+}
