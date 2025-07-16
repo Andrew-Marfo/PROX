@@ -3,6 +3,7 @@ variable "region" {
   type        = string
 }
 
+# rds variables
 variable "rds_host" {
   description = "RDS database host endpoint"
   type        = string
@@ -34,6 +35,7 @@ variable "db_tables" {
   type        = string
 }
 
+# Redshift variables
 variable "redshift_cluster_identifier" {
   description = "Redshift cluster identifier"
   type        = string
@@ -55,17 +57,49 @@ variable "redshift_master_password" {
   sensitive   = true
 }
 
+variable "redshift_db_name" {
+  description = "Redshift database name"
+  type        = string
+}
+
+variable "redshift_number_of_nodes" {
+  description = "Number of nodes in the Redshift cluster"
+  type        = number
+  
+}
+
 variable "redshift_cluster_type" {
   description = "Redshift cluster type (single-node or multi-node)"
   type        = string
 }
 
-variable "redshift_subnet_ids" {
-  description = "List of subnet IDs for Redshift subnet group"
-  type        = list(string)
+# vpc and subnet variables
+variable "redshift_subnet_cidr_a" {
+  description = "CIDR block for Redshift subnet in Availability Zone A"
+  type        = string
 }
 
-variable "redshift_vpc_id" {
-  description = "VPC ID for Redshift security group"
+variable "vpc_cidr_block" {
+  description = "CIDR block for the VPC"
+  type        = string
+}
+
+variable "route_table_cidr_block" {
+  description = "CIDR block for the route table"
+  type        = string
+}
+
+variable "availability_zone_a" {
+  description = "Availability Zone A for resources"
+  type        = string
+}
+
+variable "availability_zone_b" {
+  description = "Availability Zone B for resources"
+  type        = string
+}
+
+variable "redshift_subnet_cidr_b" {
+  description = "CIDR block for Redshift subnet in Availability Zone B"
   type        = string
 }
