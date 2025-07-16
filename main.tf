@@ -165,3 +165,120 @@ resource "aws_glue_job" "gold_data_curation_job" {
   depends_on = [aws_s3_object.gold_data_curation_script]
 }
 
+# --- VPC ---
+resource "aws_vpc" "redshift_vpc" {
+  cidr_block = var.vpc_cidr_block
+  tags = { Name = "redshift-vpc" }
+  enable_dns_support   = true
+  enable_dns_hostnames = true
+}
+
+# Internet Gateway
+resource "aws_internet_gateway" "igw" {
+  vpc_id = aws_vpc.redshift_vpc.id
+}
+
+# Route Table
+resource "aws_route_table" "main" {
+  vpc_id = aws_vpc.redshift_vpc.id
+  route {
+    cidr_block = var.route_table_cidr_block
+    gateway_id = aws_internet_gateway.igw.id
+  }
+}
+
+
+# --- Subnets ---
+# First subnet
+resource "aws_subnet" "redshift_subnet_a" {
+  vpc_id                  = aws_vpc.redshift_vpc.id
+  cidr_block              = var.redshift_subnet_cidr_a
+  availability_zone       = var.availability_zone_a
+  map_public_ip_on_launch = true
+}
+
+#Second subnet for redshift
+resource "aws_subnet" "redshift_subnet_b" {
+  vpc_id                  = aws_vpc.redshift_vpc.id
+  cidr_block              = var.redshift_subnet_cidr_b
+  availability_zone       = var.availability_zone_b
+  map_public_ip_on_launch = true
+}
+
+# Route Table Association for Subnets
+resource "aws_route_table_association" "redshift_subnet_a" {
+  subnet_id      = aws_subnet.redshift_subnet_a.id
+  route_table_id = aws_route_table.main.id
+}
+
+resource "aws_route_table_association" "redshift_subnet_b" {
+  subnet_id      = aws_subnet.redshift_subnet_b.id
+  route_table_id = aws_route_table.main.id
+}
+
+
+# Security group for Redshift
+resource "aws_security_group" "redshift_sg" {
+  name        = "prox-redshift-sg"
+  description = "Security group for Redshift cluster"
+  vpc_id      = aws_vpc.redshift_vpc.id
+
+  ingress {
+    from_port   = 5439
+    to_port     = 5439
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"] # Restrict as needed for security
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  depends_on = [
+    aws_vpc.redshift_vpc
+  ]
+}
+
+# Subnet group for Redshift
+resource "aws_redshift_subnet_group" "redshift_subnet_group" {
+  name        = "prox-redshift-subnet-group"
+  description = "Subnet group for Redshift cluster"
+  subnet_ids  = [
+    aws_subnet.redshift_subnet_a.id,
+    aws_subnet.redshift_subnet_b.id
+  ]
+
+  depends_on = [
+    aws_subnet.redshift_subnet_a,
+    aws_subnet.redshift_subnet_b
+  ]
+}
+
+# Redshift Cluster
+resource "aws_redshift_cluster" "redshift_cluster" {
+  cluster_identifier        = var.redshift_cluster_identifier
+  database_name             = var.redshift_db_name
+  master_username           = var.redshift_master_username
+  master_password           = var.redshift_master_password
+  node_type                 = var.redshift_node_type
+  cluster_type              = var.redshift_cluster_type
+  number_of_nodes           = var.redshift_number_of_nodes
+  skip_final_snapshot       = true
+  publicly_accessible       = true
+  iam_roles                 = [aws_iam_role.redshift_role.arn]
+  vpc_security_group_ids    = [aws_security_group.redshift_sg.id]
+  cluster_subnet_group_name = aws_redshift_subnet_group.redshift_subnet_group.name
+
+  tags = {
+    Name = "Proximity Redshift Cluster"
+  }
+
+  depends_on = [
+    aws_redshift_subnet_group.redshift_subnet_group,
+    aws_security_group.redshift_sg,
+    aws_iam_role.redshift_role
+  ]
+}
