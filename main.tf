@@ -282,3 +282,47 @@ resource "aws_redshift_cluster" "redshift_cluster" {
     aws_iam_role.redshift_role
   ]
 }
+
+# Upload s3_to_redshift_script.py to S3
+resource "aws_s3_object" "s3_to_redshift_script" {
+  bucket = aws_s3_bucket.gold.bucket
+  key    = "scripts/s3_to_redshift_script.py"
+  source = "${path.module}/glue_scripts/s3_to_redshift_script.py"
+  etag   = filemd5("${path.module}/glue_scripts/s3_to_redshift_script.py")
+}
+
+# Glue job to load data from S3 to Redshift
+resource "aws_glue_job" "s3_to_redshift_job" {
+  name              = "s3-to-redshift-job"
+  role_arn          = aws_iam_role.glue_service_role.arn
+  glue_version      = "4.0"
+  worker_type       = "G.1X"
+  number_of_workers = 2
+
+  command {
+    name            = "glueetl"
+    script_location = "s3://${aws_s3_bucket.gold.bucket}/scripts/s3_to_redshift_script.py"
+  }
+
+  default_arguments = {
+    "--job-language"      = "python"
+    "--TempDir"           = "s3://${aws_s3_bucket.gold.bucket}/temp/"
+    "--enable-metrics"    = ""
+    "--enable-spark-ui"   = "true"
+    "--JOB_NAME"          = "s3-to-redshift-job"
+    "--REDSHIFT_USER"     = var.redshift_master_username
+    "--REDSHIFT_PASSWORD" = var.redshift_master_password
+    "--REDSHIFT_DB"       = var.redshift_db_name
+    "--REDSHIFT_HOST"     = aws_redshift_cluster.redshift_cluster.endpoint
+    "--REDSHIFT_PORT"     = aws_redshift_cluster.redshift_cluster.port
+    "--REDSHIFT_SCHEMA"   = "public"
+    "--S3_OUTPUT_BUCKET"  = aws_s3_bucket.gold.bucket
+    "--IAM_ROLE"          = aws_iam_role.redshift_role.arn
+  }
+
+  depends_on = [
+    aws_s3_object.s3_to_redshift_script,
+    aws_redshift_cluster.redshift_cluster,
+    aws_iam_role.redshift_role
+  ]
+}
