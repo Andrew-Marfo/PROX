@@ -17,7 +17,9 @@ terraform.tfstate.d/
 *.auto.tfvars.json
 secret.tfvars
 terraform.tfvars.json
-terraform.tfstate
+# Terraform state files
+*.tfstate
+*.tfstate.*
 
 # Terraform plan output
 plan.out
