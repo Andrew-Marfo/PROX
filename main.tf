@@ -131,3 +131,198 @@ resource "aws_sns_topic" "notifications" {
   name = "prox-notifications"
 }
 
+# gold_data_curation_script location
+resource "aws_s3_object" "gold_data_curation_script" {
+  bucket = aws_s3_bucket.gold.bucket
+  key    = "scripts/gold_data_curation_script.py"
+  source = "${path.module}/glue_scripts/gold_data_curation_script.py"
+  etag   = filemd5("${path.module}/glue_scripts/gold_data_curation_script.py")
+}
+
+# Glue job for gold data curation
+resource "aws_glue_job" "gold_data_curation_job" {
+  name              = "gold-data-curation-job"
+  role_arn          = aws_iam_role.glue_service_role.arn
+  glue_version      = "4.0"
+  worker_type       = "G.1X"
+  number_of_workers = 2
+
+  command {
+    name            = "glueetl"
+    script_location = "s3://${aws_s3_bucket.gold.bucket}/scripts/gold_data_curation_script.py"
+  }
+
+  default_arguments = {
+    "--job-language"     = "python"
+    "--TempDir"          = "s3://${aws_s3_bucket.gold.bucket}/temp/"
+    "--enable-metrics"   = ""
+    "--enable-spark-ui"  = "true"
+    "--JOB_NAME"         = "gold-data-curation-job"
+    "--SOURCE_DATABASE"  = aws_glue_catalog_database.lakehouse.name
+    "--S3_OUTPUT_BUCKET" = aws_s3_bucket.gold.bucket
+  }
+
+  depends_on = [aws_s3_object.gold_data_curation_script]
+}
+
+# --- VPC ---
+resource "aws_vpc" "redshift_vpc" {
+  cidr_block = var.vpc_cidr_block
+  tags = { Name = "redshift-vpc" }
+  enable_dns_support   = true
+  enable_dns_hostnames = true
+}
+
+# Internet Gateway
+resource "aws_internet_gateway" "igw" {
+  vpc_id = aws_vpc.redshift_vpc.id
+}
+
+# Route Table
+resource "aws_route_table" "main" {
+  vpc_id = aws_vpc.redshift_vpc.id
+  route {
+    cidr_block = var.route_table_cidr_block
+    gateway_id = aws_internet_gateway.igw.id
+  }
+}
+
+
+# --- Subnets ---
+# First subnet
+resource "aws_subnet" "redshift_subnet_a" {
+  vpc_id                  = aws_vpc.redshift_vpc.id
+  cidr_block              = var.redshift_subnet_cidr_a
+  availability_zone       = var.availability_zone_a
+  map_public_ip_on_launch = true
+}
+
+#Second subnet for redshift
+resource "aws_subnet" "redshift_subnet_b" {
+  vpc_id                  = aws_vpc.redshift_vpc.id
+  cidr_block              = var.redshift_subnet_cidr_b
+  availability_zone       = var.availability_zone_b
+  map_public_ip_on_launch = true
+}
+
+# Route Table Association for Subnets
+resource "aws_route_table_association" "redshift_subnet_a" {
+  subnet_id      = aws_subnet.redshift_subnet_a.id
+  route_table_id = aws_route_table.main.id
+}
+
+resource "aws_route_table_association" "redshift_subnet_b" {
+  subnet_id      = aws_subnet.redshift_subnet_b.id
+  route_table_id = aws_route_table.main.id
+}
+
+
+# Security group for Redshift
+resource "aws_security_group" "redshift_sg" {
+  name        = "prox-redshift-sg"
+  description = "Security group for Redshift cluster"
+  vpc_id      = aws_vpc.redshift_vpc.id
+
+  ingress {
+    from_port   = 5439
+    to_port     = 5439
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"] # Restrict as needed for security
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  depends_on = [
+    aws_vpc.redshift_vpc
+  ]
+}
+
+# Subnet group for Redshift
+resource "aws_redshift_subnet_group" "redshift_subnet_group" {
+  name        = "prox-redshift-subnet-group"
+  description = "Subnet group for Redshift cluster"
+  subnet_ids  = [
+    aws_subnet.redshift_subnet_a.id,
+    aws_subnet.redshift_subnet_b.id
+  ]
+
+  depends_on = [
+    aws_subnet.redshift_subnet_a,
+    aws_subnet.redshift_subnet_b
+  ]
+}
+
+# Redshift Cluster
+resource "aws_redshift_cluster" "redshift_cluster" {
+  cluster_identifier        = var.redshift_cluster_identifier
+  database_name             = var.redshift_db_name
+  master_username           = var.redshift_master_username
+  master_password           = var.redshift_master_password
+  node_type                 = var.redshift_node_type
+  cluster_type              = var.redshift_cluster_type
+  number_of_nodes           = var.redshift_number_of_nodes
+  skip_final_snapshot       = true
+  publicly_accessible       = true
+  iam_roles                 = [aws_iam_role.redshift_role.arn]
+  vpc_security_group_ids    = [aws_security_group.redshift_sg.id]
+  cluster_subnet_group_name = aws_redshift_subnet_group.redshift_subnet_group.name
+
+  tags = {
+    Name = "Proximity Redshift Cluster"
+  }
+
+  depends_on = [
+    aws_redshift_subnet_group.redshift_subnet_group,
+    aws_security_group.redshift_sg,
+    aws_iam_role.redshift_role
+  ]
+}
+
+# Upload s3_to_redshift_script.py to S3
+resource "aws_s3_object" "s3_to_redshift_script" {
+  bucket = aws_s3_bucket.gold.bucket
+  key    = "scripts/s3_to_redshift_script.py"
+  source = "${path.module}/glue_scripts/s3_to_redshift_script.py"
+  etag   = filemd5("${path.module}/glue_scripts/s3_to_redshift_script.py")
+}
+
+# Glue job to load data from S3 to Redshift
+resource "aws_glue_job" "s3_to_redshift_job" {
+  name              = "s3-to-redshift-job"
+  role_arn          = aws_iam_role.glue_service_role.arn
+  glue_version      = "4.0"
+  worker_type       = "G.1X"
+  number_of_workers = 2
+
+  command {
+    name            = "glueetl"
+    script_location = "s3://${aws_s3_bucket.gold.bucket}/scripts/s3_to_redshift_script.py"
+  }
+
+  default_arguments = {
+    "--job-language"      = "python"
+    "--TempDir"           = "s3://${aws_s3_bucket.gold.bucket}/temp/"
+    "--enable-metrics"    = ""
+    "--enable-spark-ui"   = "true"
+    "--JOB_NAME"          = "s3-to-redshift-job"
+    "--REDSHIFT_USER"     = var.redshift_master_username
+    "--REDSHIFT_PASSWORD" = var.redshift_master_password
+    "--REDSHIFT_DB"       = var.redshift_db_name
+    "--REDSHIFT_HOST"     = aws_redshift_cluster.redshift_cluster.endpoint
+    "--REDSHIFT_PORT"     = aws_redshift_cluster.redshift_cluster.port
+    "--REDSHIFT_SCHEMA"   = "public"
+    "--S3_OUTPUT_BUCKET"  = aws_s3_bucket.gold.bucket
+    "--IAM_ROLE"          = aws_iam_role.redshift_role.arn
+  }
+
+  depends_on = [
+    aws_s3_object.s3_to_redshift_script,
+    aws_redshift_cluster.redshift_cluster,
+    aws_iam_role.redshift_role
+  ]
+}
