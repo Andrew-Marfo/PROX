@@ -1,6 +1,12 @@
 import sys
-import psycopg2
+import logging
+from awsglue.context import GlueContext
 from awsglue.utils import getResolvedOptions
+from pyspark.context import SparkContext
+
+# Initialize logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)    
 
 # Get parameters
 args = getResolvedOptions(sys.argv, [
@@ -15,144 +21,52 @@ args = getResolvedOptions(sys.argv, [
     "IAM_ROLE"
 ])
 
-# Extract Redshift connection params
-host = args["REDSHIFT_HOST"]
-port = args["REDSHIFT_PORT"]
-dbname = args["REDSHIFT_DB"]
-user = args["REDSHIFT_USER"]
-password = args["REDSHIFT_PASSWORD"]
-schema = args["REDSHIFT_SCHEMA"]
-bucket = args["S3_OUTPUT_BUCKET"]
+# Extract parameters
+redshift_user = args["REDSHIFT_USER"]
+redshift_password = args["REDSHIFT_PASSWORD"]
+redshift_db = args["REDSHIFT_DB"]
+redshift_host = args["REDSHIFT_HOST"]
+redshift_port = args["REDSHIFT_PORT"]
+redshift_schema = args["REDSHIFT_SCHEMA"]
+s3_output_bucket = args["S3_OUTPUT_BUCKET"]
 iam_role = args["IAM_ROLE"]
 
-# Connect to Redshift
-conn = psycopg2.connect(
-    dbname=dbname,
-    user=user,
-    password=password,
-    host=host,
-    port=port
-)
-cursor = conn.cursor()
+# Initialize Glue context
+sc = SparkContext()
+glueContext = GlueContext(sc)
+spark = glueContext.spark_session
 
-# Tables and their DDLs
-tables = {
-    "dim_user": f"""
-        CREATE TABLE IF NOT EXISTS {schema}.dim_user (
-            user_id INT,
-            email VARCHAR(256),
-            phone_number VARCHAR(50),
-            role VARCHAR(50),
-            provider_id INT,
-            business_name VARCHAR(256),
-            verification_status VARCHAR(50),
-            is_ai_generated BOOLEAN,
-            full_name VARCHAR(256),
-            created_at TIMESTAMP
-        );
-    """,
-
-    "dim_date": f"""
-        CREATE TABLE IF NOT EXISTS {schema}.dim_date (
-            date_key INT,
-            date DATE,
-            day INT,
-            month INT,
-            month_name VARCHAR(20),
-            quarter INT,
-            year INT,
-            day_of_week INT,
-            day_name VARCHAR(20),
-            is_weekend BOOLEAN
-        );
-    """,
-
-    "dim_service": f"""
-        CREATE TABLE IF NOT EXISTS {schema}.dim_service (
-            service_id INT,
-            provider_id INT,
-            category_id INT,
-            category_name VARCHAR(255),
-            service_name VARCHAR(255),
-            description TEXT,
-            price FLOAT,
-            created_at TIMESTAMP,
-            updated_at TIMESTAMP
-        );
-    """,
-
-    "dim_location": f"""
-        CREATE TABLE IF NOT EXISTS {schema}.dim_location (
-            location_id INT,
-            location VARCHAR(255)
-        );
-    """,
-
-    "dim_dispute": f"""
-        CREATE TABLE IF NOT EXISTS {schema}.dim_dispute (
-            dispute_id INT,
-            booking_id INT,
-            user_id INT,
-            reason TEXT,
-            dispute_status VARCHAR(50),
-            created_at TIMESTAMP,
-            updated_at TIMESTAMP
-        );
-    """,
-
-    "dim_review": f"""
-        CREATE TABLE IF NOT EXISTS {schema}.dim_review (
-            review_id INT,
-            user_id INT,
-            provider_id INT,
-            booking_id INT,
-            rating INT,
-            comment TEXT,
-            created_at TIMESTAMP,
-            review_type VARCHAR(20)
-        );
-    """,
-
-    "fact_booking": f"""
-        CREATE TABLE IF NOT EXISTS {schema}.fact_booking (
-            booking_id INT,
-            user_id INT,
-            service_id INT,
-            provider_id INT,
-            quote_id INT,
-            scheduled_date DATE,
-            booking_status VARCHAR(50),
-            amount FLOAT,
-            created_at TIMESTAMP,
-            date_key VARCHAR(20),
-            year INT,
-            month INT
-        )
-        DISTKEY(booking_id)
-        SORTKEY(date_key);
-    """
+# Redshift connection options
+redshift_tmp_dir = f"s3://{s3_output_bucket}/temp/"
+redshift_conn_options = {
+    "url": f"jdbc:redshift://{redshift_host}:{redshift_port}/{redshift_db}",
+    "user": redshift_user,
+    "password": redshift_password,
+    "dbtable": "",  # Will be set per table
+    "redshiftTmpDir": redshift_tmp_dir,
+    "aws_iam_role": iam_role
 }
 
-# Run CREATE TABLEs
-for table_name, ddl in tables.items():
-    print(f"📌 Creating table if not exists: {table_name}")
-    cursor.execute(ddl)
-    conn.commit()
+tables = ["dim_user", "dim_date", "dim_service", "dim_location", "dim_dispute", "dim_review", "fact_booking"]
 
-# COPY commands
-for table_name in tables.keys():
-    s3_path = f"s3://{bucket}/star_schema/{table_name}/"
-    copy_sql = f"""
-        COPY {schema}.{table_name}
-        FROM '{s3_path}'
-        IAM_ROLE '{iam_role}'
-        FORMAT AS PARQUET;
-    """
-    print(f"🚀 Loading data into: {table_name}")
-    cursor.execute(copy_sql)
-    conn.commit()
+for table in tables:
+    try: 
+        s3_path = f"s3://{args['S3_OUTPUT_BUCKET']}/star_schema/{table}/"
+        # Read from S3
+        dyf = glueContext.create_dynamic_frame.from_options(
+            connection_type="s3",
+            connection_options={"paths": [s3_path]},
+            format="parquet"
+        )
+        # Write to Redshift
+        redshift_conn_options["dbtable"] = f"{redshift_schema}.{table}"
+        glueContext.write_dynamic_frame.from_jdbc_conf(
+            frame=dyf,
+            connection_type="redshift",
+            connection_options=redshift_conn_options
+        )
+        logger.info(f"✅ Table {table} loaded into Redshift successfully.")
+    except Exception as e:
+        logger.error(f"❌ Failed to load table {table} into Redshift: {e}")
 
-# Clean up
-cursor.close()
-conn.close()
-print("✅ All tables created and loaded successfully.")
+logger.info("✅ All tables loaded into Redshift successfully.")
