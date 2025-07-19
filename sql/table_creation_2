@@ -1,0 +1,237 @@
+--Enums
+CREATE TYPE UserStatus AS ENUM ('FRESH', 'VERIFIED', 'SUSPENDED', 'ACTIVE', 'DELETED');
+CREATE TYPE VerificationStatus AS ENUM ('PENDING', 'VERIFIED', 'REJECTED', 'SUSPENDED');
+CREATE TYPE UserRole AS ENUM ('ROLE_SERVICE_PROVIDER', 'ROLE_SERVICE_SEEKER', 'ROLE_ADMIN');
+CREATE TYPE CategoryStatus AS ENUM ('ACTIVE', 'INACTIVE');
+CREATE TYPE Status AS ENUM ('PENDING', 'REJECTED', 'RECEIVED', 'EXPIRED', 'ACCEPTED', 'DECLINED', 'COMPLETED');
+CREATE TYPE RequestType AS ENUM ('QUOTE', 'CALL');
+CREATE TYPE PaymentMethod AS ENUM ('BANK_ACCOUNT', 'MOBILE_MONEY_ACCOUNT');
+CREATE TYPE MobileMoneyProvider AS ENUM ('MTN_MOBILE_MONEY', 'TELECEL_CASH', 'AIRTELTIGO_MONEY', 'G_MONEY');
+CREATE TYPE BookingStatus AS ENUM ('PENDING', 'ACCEPTED', 'IN_PROGRESS', 'COMPLETED', 'DECLINED');
+CREATE TYPE ReportStatus AS ENUM ('PENDING', 'REVIEWED', 'REJECTED');
+
+--users
+CREATE TABLE users (
+    user_id UUID PRIMARY KEY,
+    email VARCHAR UNIQUE NOT NULL,
+    password VARCHAR,
+    first_name VARCHAR NOT NULL,
+    last_name VARCHAR,
+    role UserRole,
+    profile_picture VARCHAR,
+    phone_number VARCHAR,
+    status UserStatus,
+    google_id VARCHAR,
+    created_at TIMESTAMP NOT NULL,
+    update_at TIMESTAMP NOT NULL
+);
+
+--service_providers
+CREATE TABLE service_providers (
+    provider_id UUID PRIMARY KEY,
+    user_id UUID UNIQUE NOT NULL REFERENCES users(user_id),
+    business_name VARCHAR UNIQUE NOT NULL,
+    verification_status VerificationStatus,
+    description VARCHAR NOT NULL,
+    pricing VARCHAR,
+    address_name VARCHAR NOT NULL,
+    address_latitude DOUBLE PRECISION NOT NULL,
+    address_longitude DOUBLE PRECISION NOT NULL,
+    phone_number VARCHAR UNIQUE NOT NULL,
+    email VARCHAR UNIQUE,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+);
+
+--categories
+CREATE TABLE categories (
+    category_id UUID PRIMARY KEY,
+    category_name VARCHAR NOT NULL,
+    description VARCHAR,
+    status CategoryStatus DEFAULT 'ACTIVE',
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+);
+
+--provider_categories
+CREATE TABLE provider_categories (
+    provider_id UUID REFERENCES service_providers(provider_id),
+    category_id UUID REFERENCES categories(category_id),
+    PRIMARY KEY (provider_id, category_id)
+);
+
+--certifications
+CREATE TABLE certifications (
+    certification_id UUID PRIMARY KEY,
+    provider_id UUID REFERENCES service_providers(provider_id),
+    doc_url VARCHAR NOT NULL,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+);
+
+--availabilities
+CREATE TABLE availabilities (
+    id UUID PRIMARY KEY,
+    provider_id UUID REFERENCES service_providers(provider_id),
+    day_of_week VARCHAR,
+    start_time TIME,
+    end_time TIME,
+    status BOOLEAN,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+);
+
+--device_tokens
+CREATE TABLE device_tokens (
+    id BIGSERIAL PRIMARY KEY,
+    token VARCHAR,
+    user_id UUID REFERENCES users(user_id)
+);
+
+--gallery
+CREATE TABLE gallery (
+    image_id UUID PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(user_id),
+    url VARCHAR NOT NULL UNIQUE
+);
+
+--payment_account
+CREATE TABLE payment_account (
+    payment_account_id UUID PRIMARY KEY,
+    account_name VARCHAR NOT NULL,
+    account_alias VARCHAR,
+    user_id UUID NOT NULL REFERENCES users(user_id),
+    payment_method PaymentMethod NOT NULL
+);
+
+--mobile_money_transfer
+CREATE TABLE mobile_money_transfer (
+    payment_account_id UUID PRIMARY KEY REFERENCES payment_account(payment_account_id),
+    phone_number VARCHAR UNIQUE NOT NULL,
+    provider MobileMoneyProvider NOT NULL
+);
+
+--bank_account_transfer
+CREATE TABLE bank_account_transfer (
+    payment_account_id UUID PRIMARY KEY REFERENCES payment_account(payment_account_id),
+    account_number VARCHAR UNIQUE NOT NULL,
+    bank_operator VARCHAR NOT NULL,
+    tax_id VARCHAR
+);
+
+--quote_call_requests
+CREATE TABLE quote_call_requests (
+    quote_request_id UUID PRIMARY KEY,
+    title VARCHAR,
+    seeker_id UUID NOT NULL REFERENCES users(user_id),
+    provider_id UUID NOT NULL REFERENCES service_providers(provider_id),
+    quote_status Status,
+    description VARCHAR,
+    preferred_start_date DATE NOT NULL,
+    budget_range VARCHAR,
+    location VARCHAR NOT NULL,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP,
+    request_type RequestType
+);
+
+--quotesimages
+CREATE TABLE quotes_images (
+    image_id UUID PRIMARY KEY,
+    quote_request_id UUID NOT NULL REFERENCES quote_call_requests(quote_request_id),
+    url VARCHAR NOT NULL UNIQUE
+);
+
+--quote_response
+CREATE TABLE quote_response (
+    quote_response_id UUID PRIMARY KEY,
+    seeker_id UUID NOT NULL REFERENCES users(user_id),
+    provider_id UUID NOT NULL REFERENCES service_providers(provider_id),
+    quote_request_id UUID REFERENCES quote_call_requests(quote_request_id),
+    seeker_name VARCHAR NOT NULL,
+    seeker_phone_number VARCHAR NOT NULL,
+    service_type VARCHAR NOT NULL,
+    valid_until DATE NOT NULL,
+    additional_notes VARCHAR,
+    sub_total DOUBLE PRECISION NOT NULL,
+    tax DOUBLE PRECISION NOT NULL,
+    total DOUBLE PRECISION NOT NULL,
+    status Status,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+);
+
+--quote_items
+CREATE TABLE quote_item (
+    quote_item_id UUID PRIMARY KEY,
+    description VARCHAR,
+    quantity INT,
+    price DOUBLE PRECISION,
+    quote_response_id UUID REFERENCES quote_response(quote_response_id)
+);
+
+--booking
+CREATE TABLE bookings (
+    id UUID PRIMARY KEY,
+    category_id UUID REFERENCES categories(category_id),
+    seeker_id UUID REFERENCES users(user_id),
+    provider_id UUID REFERENCES service_providers(provider_id),
+    description VARCHAR,
+    quote_id UUID UNIQUE REFERENCES quote_response(quote_response_id),
+    location VARCHAR,
+    preferred_date DATE,
+    preferred_time TIME,
+    end_date DATE,
+    additional_information VARCHAR,
+    status BookingStatus,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+);
+
+-- booking_attachments
+CREATE TABLE booking_attachments (
+    id UUID PRIMARY KEY,
+    booking_id UUID REFERENCES bookings(id),
+    attachment_url VARCHAR,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+);
+
+--chat messages
+CREATE TABLE chat_messages (
+    message_id UUID PRIMARY KEY,
+    booking_id UUID NOT NULL REFERENCES bookings(id),
+    sender_id UUID REFERENCES users(user_id),
+    message VARCHAR NOT NULL,
+    timestamp TIMESTAMP
+);
+
+--provider_reviews
+CREATE TABLE provider_reviews (
+    review_id UUID PRIMARY KEY,
+    provider_id UUID NOT NULL REFERENCES service_providers(provider_id),
+    user_id UUID NOT NULL REFERENCES users(user_id),
+    is_anonymous BOOLEAN,
+    ratings DOUBLE PRECISION NOT NULL,
+    comment VARCHAR NOT NULL,
+    is_reported BOOLEAN,
+    created_at TIMESTAMP NOT NULL
+);
+
+--reports
+CREATE TABLE reports (
+    id UUID PRIMARY KEY,
+    review_id UUID REFERENCES provider_reviews(review_id),
+    user_id UUID REFERENCES users(user_id),
+    reason VARCHAR NOT NULL,
+    status ReportStatus,
+    reported_at TIMESTAMP
+);
+
+--feedback_sentiments
+CREATE TABLE feedback_sentiments (
+    id UUID PRIMARY KEY,
+    sentiment_label VARCHAR NOT NULL,
+    sentiment_score DOUBLE PRECISION NOT NULL,
+    is_suspicious BOOLEAN NOT NULL,
+);
