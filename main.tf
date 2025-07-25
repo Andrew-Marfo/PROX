@@ -36,7 +36,7 @@ resource "aws_glue_crawler" "bronze_crawler" {
   role          = aws_iam_role.glue_service_role.arn
   database_name = aws_glue_catalog_database.lakehouse.name
   s3_target {
-    path = "s3://${aws_s3_bucket.bronze.bucket}/prox/"
+    path = "s3://${aws_s3_bucket.bronze.bucket}/snapservice/"
   }
   depends_on = [aws_s3_bucket.bronze]
 }
@@ -47,9 +47,20 @@ resource "aws_glue_crawler" "silver_crawler" {
   role          = aws_iam_role.glue_service_role.arn
   database_name = aws_glue_catalog_database.lakehouse.name
   s3_target {
-    path = "s3://${aws_s3_bucket.silver.bucket}/prox/"
+    path = "s3://${aws_s3_bucket.silver.bucket}/snapservice/"
   }
   depends_on = [aws_s3_bucket.silver]
+}
+
+# Gold Glue Crawler
+resource "aws_glue_crawler" "gold_crawler" {
+  name          = "gold-crawler"
+  role          = aws_iam_role.glue_service_role.arn
+  database_name = aws_glue_catalog_database.lakehouse.name
+  s3_target {
+    path = "s3://${aws_s3_bucket.gold.bucket}/star_schema/"
+  }
+  depends_on = [aws_s3_bucket.gold]
 }
 
 # bronze_ingestion script location
