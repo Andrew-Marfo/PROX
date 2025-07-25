@@ -1,4 +1,5 @@
 import sys
+import logging
 from awsglue.transforms import *
 from awsglue.utils import getResolvedOptions
 from pyspark.context import SparkContext
@@ -10,6 +11,13 @@ sc = SparkContext()
 glueContext = GlueContext(sc)
 spark = glueContext.spark_session
 job = Job(glueContext)
+
+# Configure logging
+logging.basicConfig(
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    level=logging.INFO,
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
 
 # Get job parameters
 args = getResolvedOptions(sys.argv, [
@@ -52,6 +60,6 @@ for table in tables:
     output_path = f"s3://{s3_output_bucket}/{args['RDS_DB_NAME']}/{table}/"
     df.write.mode("overwrite").parquet(output_path)
     
-    print(f"Successfully exported {table} to {output_path}")
+    logging.info(f"✅ Successfully extracted {table} to {output_path}")
 
 job.commit()
