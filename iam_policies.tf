@@ -115,3 +115,61 @@ resource "aws_iam_role_policy_attachment" "redshift_s3_access" {
   role       = aws_iam_role.redshift_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
 }
+
+resource "aws_iam_role" "step_functions_role" {
+  name = "StepFunctionsGlueOrchestrationRole"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "states.amazonaws.com"
+        }
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "step_functions_permissions" {
+  name = "StepFunctionsGlueAndSNSPermissions"
+  role = aws_iam_role.step_functions_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+
+      # Glue job execution
+      {
+        Effect = "Allow"
+        Action = [
+          "glue:StartJobRun",
+          "glue:GetJobRun",
+          "glue:GetJobRuns",
+          "glue:GetJob"
+        ]
+        Resource = "*"
+      },
+
+      # Glue crawler control
+      {
+        Effect = "Allow"
+        Action = [
+          "glue:StartCrawler",
+          "glue:GetCrawler",
+          "glue:GetCrawlers"
+        ]
+        Resource = "*"
+      },
+
+      # SNS publish
+      {
+        Effect = "Allow"
+        Action = "sns:Publish"
+        Resource = aws_sns_topic.notifications.arn
+      }
+    ]
+  })
+}
