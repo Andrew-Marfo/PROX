@@ -337,3 +337,15 @@ resource "aws_glue_job" "s3_to_redshift_job" {
     aws_iam_role.redshift_role
   ]
 }
+
+output "bronze_bucket_name" {
+  value = aws_s3_bucket.bronze.bucket
+}
+
+output "silver_bucket_name" {
+  value = aws_s3_bucket.silver.bucket
+}
+
+output "gold_bucket_name" {
+  value = aws_s3_bucket.gold.bucket
+}

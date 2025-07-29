@@ -1,0 +1,59 @@
+name: Deploy Glue Scripts to S3
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  SCRIPTS: |
+    bronze_ingestion_script.py,bronze,/scripts/bronze_ingestion_script.py
+    transformations_script.py,bronze,/scripts/transformations_script.py
+    gold_data_curation_script.py,gold,/scripts/gold_data_curation_script.py
+    s3_to_redshift_script.py,gold,/scripts/s3_to_redshift_script.py
+
+jobs:
+  deploy-glue-scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-west-1
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Get bucket names from Terraform output
+        id: buckets
+        run: |
+          echo '{
+            "bronze": "'"$(terraform output -raw bronze_bucket_name || echo '')"'",
+            "silver": "'"$(terraform output -raw silver_bucket_name || echo '')"'",
+            "gold": "'"$(terraform output -raw gold_bucket_name || echo '')"'"
+          }' > buckets.json
+          echo "buckets=$(cat buckets.json)" >> $GITHUB_OUTPUT
+
+      - name: Deploy Glue scripts to S3
+        run: |
+          echo "$SCRIPTS" | while IFS="," read -r LOCAL BUCKET REMOTE; do
+            BUCKET_NAME=$(echo '${{ fromJson(steps.buckets.outputs.buckets) }}' | jq -r ".${BUCKET}")
+            if [ -z "$BUCKET_NAME" ]; then
+              echo "❌ Bucket $BUCKET not found in Terraform outputs!"
+              exit 1
+            fi
+            echo "Uploading $LOCAL to s3://$BUCKET_NAME$REMOTE"
+            aws s3 cp "glue_scripts/$LOCAL" "s3://$BUCKET_NAME$REMOTE" --only-show-errors || exit 1
+          done
+
+      - name: Done
+        run: echo "🎉 Glue scripts deployed successfully!"
