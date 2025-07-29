@@ -38,22 +38,29 @@ jobs:
       - name: Terraform Init
         run: terraform init
 
-      - name: Get bucket names from Terraform output
-        id: buckets
-        run: |
-          echo '{
-            "bronze": "'"$(terraform output -raw bronze_bucket_name || echo '')"'",
-            "silver": "'"$(terraform output -raw silver_bucket_name || echo '')"'",
-            "gold": "'"$(terraform output -raw gold_bucket_name || echo '')"'"
-          }' > buckets.json
-          echo "buckets=$(cat buckets.json)" >> $GITHUB_OUTPUT
+      - name: Get bronze bucket name
+        id: bronze_bucket
+        run: echo "value=$(terraform output -raw bronze_bucket_name)" >> $GITHUB_OUTPUT
+
+      - name: Get silver bucket name
+        id: silver_bucket
+        run: echo "value=$(terraform output -raw silver_bucket_name)" >> $GITHUB_OUTPUT
+
+      - name: Get gold bucket name
+        id: gold_bucket
+        run: echo "value=$(terraform output -raw gold_bucket_name)" >> $GITHUB_OUTPUT
 
       - name: Deploy Glue scripts to S3
         run: |
           echo "$SCRIPTS" | while IFS="," read -r LOCAL BUCKET REMOTE; do
-            BUCKET_NAME=$(echo '${{ fromJson(steps.buckets.outputs.buckets) }}' | jq -r ".${BUCKET}")
-            if [ -z "$BUCKET_NAME" ]; then
-              echo "❌ Bucket $BUCKET not found in Terraform outputs!"
+            if [ "$BUCKET" = "bronze" ]; then
+              BUCKET_NAME="${{ steps.bronze_bucket.outputs.value }}"
+            elif [ "$BUCKET" = "silver" ]; then
+              BUCKET_NAME="${{ steps.silver_bucket.outputs.value }}"
+            elif [ "$BUCKET" = "gold" ]; then
+              BUCKET_NAME="${{ steps.gold_bucket.outputs.value }}"
+            else
+              echo "❌ Unknown bucket: $BUCKET"
               exit 1
             fi
             echo "Uploading $LOCAL to s3://$BUCKET_NAME$REMOTE"
