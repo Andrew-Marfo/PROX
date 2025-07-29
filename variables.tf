@@ -65,7 +65,7 @@ variable "redshift_db_name" {
 variable "redshift_number_of_nodes" {
   description = "Number of nodes in the Redshift cluster"
   type        = number
-  
+
 }
 
 variable "redshift_cluster_type" {
