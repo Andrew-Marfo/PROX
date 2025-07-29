@@ -2,26 +2,26 @@ provider "aws" {
   region = var.region
   default_tags {
     tags = {
-      Project     = "Proximity-Based Service Provider Finder"
+      Project = "Proximity-Based Service Provider Finder"
     }
   }
 }
 
 # Raw data bucket
 resource "aws_s3_bucket" "bronze" {
-  bucket = "prox-bronze-bucket"
+  bucket        = "prox-bronze-bucket"
   force_destroy = true
 }
 
 # Curated data bucket
 resource "aws_s3_bucket" "silver" {
-  bucket = "prox-silver-bucket"
+  bucket        = "prox-silver-bucket"
   force_destroy = true
 }
 
 # Processed data bucket
 resource "aws_s3_bucket" "gold" {
-  bucket = "prox-gold-bucket"
+  bucket        = "prox-gold-bucket"
   force_destroy = true
 }
 
@@ -81,10 +81,10 @@ resource "aws_s3_object" "transformations_script" {
 
 # Glue job to load data from rds to bronze
 resource "aws_glue_job" "bronze_ingestion_job" {
-  name            = "bronze-ingestion-job"
-  role_arn        = aws_iam_role.glue_service_role.arn
-  glue_version    = "4.0"
-  worker_type     = "G.1X"
+  name              = "bronze-ingestion-job"
+  role_arn          = aws_iam_role.glue_service_role.arn
+  glue_version      = "4.0"
+  worker_type       = "G.1X"
   number_of_workers = 2
 
   command {
@@ -93,18 +93,18 @@ resource "aws_glue_job" "bronze_ingestion_job" {
   }
 
   default_arguments = {
-    "--job-language"      = "python"
-    "--TempDir"           = "s3://${aws_s3_bucket.bronze.bucket}/temp/"
-    "--enable-metrics"    = ""
-    "--enable-spark-ui"   = "true"
-    "--JOB_NAME"          = "bronze-ingestion-job"
-    "--RDS_HOST"          = var.rds_host
-    "--RDS_PORT"          = var.rds_port
-    "--RDS_DB_NAME"       = var.rds_db_name
-    "--RDS_USERNAME"      = var.rds_username
-    "--RDS_PASSWORD"      = var.rds_password
-    "--S3_OUTPUT_BUCKET"  = aws_s3_bucket.bronze.bucket
-    "--DB_TABLES" = var.db_tables
+    "--job-language"     = "python"
+    "--TempDir"          = "s3://${aws_s3_bucket.bronze.bucket}/temp/"
+    "--enable-metrics"   = ""
+    "--enable-spark-ui"  = "true"
+    "--JOB_NAME"         = "bronze-ingestion-job"
+    "--RDS_HOST"         = var.rds_host
+    "--RDS_PORT"         = var.rds_port
+    "--RDS_DB_NAME"      = var.rds_db_name
+    "--RDS_USERNAME"     = var.rds_username
+    "--RDS_PASSWORD"     = var.rds_password
+    "--S3_OUTPUT_BUCKET" = aws_s3_bucket.bronze.bucket
+    "--DB_TABLES"        = var.db_tables
   }
 
   depends_on = [aws_s3_object.bronze_ingestion_script]
@@ -112,10 +112,10 @@ resource "aws_glue_job" "bronze_ingestion_job" {
 
 # Glue job for transformations
 resource "aws_glue_job" "transformations_job" {
-  name            = "transformations-job"
-  role_arn        = aws_iam_role.glue_service_role.arn
-  glue_version    = "4.0"
-  worker_type     = "G.1X"
+  name              = "transformations-job"
+  role_arn          = aws_iam_role.glue_service_role.arn
+  glue_version      = "4.0"
+  worker_type       = "G.1X"
   number_of_workers = 2
 
   command {
@@ -124,14 +124,14 @@ resource "aws_glue_job" "transformations_job" {
   }
 
   default_arguments = {
-    "--job-language"        = "python"
-    "--TempDir"             = "s3://${aws_s3_bucket.silver.bucket}/temp/"
-    "--enable-metrics"      = ""
-    "--enable-spark-ui"     = "true"
-    "--JOB_NAME"            = "transformations-job"
-    "--SOURCE_DATABASE"     = aws_glue_catalog_database.lakehouse.name
-    "--S3_OUTPUT_BUCKET"    = aws_s3_bucket.silver.bucket
-    "--DB_TABLES"           = var.db_tables
+    "--job-language"     = "python"
+    "--TempDir"          = "s3://${aws_s3_bucket.silver.bucket}/temp/"
+    "--enable-metrics"   = ""
+    "--enable-spark-ui"  = "true"
+    "--JOB_NAME"         = "transformations-job"
+    "--SOURCE_DATABASE"  = aws_glue_catalog_database.lakehouse.name
+    "--S3_OUTPUT_BUCKET" = aws_s3_bucket.silver.bucket
+    "--DB_TABLES"        = var.db_tables
   }
 
   depends_on = [aws_s3_object.transformations_script]
@@ -178,8 +178,8 @@ resource "aws_glue_job" "gold_data_curation_job" {
 
 # --- VPC ---
 resource "aws_vpc" "redshift_vpc" {
-  cidr_block = var.vpc_cidr_block
-  tags = { Name = "redshift-vpc" }
+  cidr_block           = var.vpc_cidr_block
+  tags                 = { Name = "redshift-vpc" }
   enable_dns_support   = true
   enable_dns_hostnames = true
 }
@@ -257,7 +257,7 @@ resource "aws_security_group" "redshift_sg" {
 resource "aws_redshift_subnet_group" "redshift_subnet_group" {
   name        = "prox-redshift-subnet-group"
   description = "Subnet group for Redshift cluster"
-  subnet_ids  = [
+  subnet_ids = [
     aws_subnet.redshift_subnet_a.id,
     aws_subnet.redshift_subnet_b.id
   ]

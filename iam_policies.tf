@@ -166,8 +166,8 @@ resource "aws_iam_role_policy" "step_functions_permissions" {
 
       # SNS publish
       {
-        Effect = "Allow"
-        Action = "sns:Publish"
+        Effect   = "Allow"
+        Action   = "sns:Publish"
         Resource = aws_sns_topic.notifications.arn
       }
     ]
