@@ -9,19 +9,19 @@ provider "aws" {
 
 # Raw data bucket
 resource "aws_s3_bucket" "bronze" {
-  bucket        = "prox-bronze-bucket"
+  bucket        = var.bronze_bucket_name
   force_destroy = true
 }
 
 # Curated data bucket
 resource "aws_s3_bucket" "silver" {
-  bucket        = "prox-silver-bucket"
+  bucket        = var.silver_bucket_name
   force_destroy = true
 }
 
 # Processed data bucket
 resource "aws_s3_bucket" "gold" {
-  bucket        = "prox-gold-bucket"
+  bucket        = var.gold_bucket_name
   force_destroy = true
 }
 

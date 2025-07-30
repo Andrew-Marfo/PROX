@@ -103,3 +103,18 @@ variable "redshift_subnet_cidr_b" {
   description = "CIDR block for Redshift subnet in Availability Zone B"
   type        = string
 }
+
+variable "bronze_bucket_name" {
+  description = "Name of the bronze S3 bucket"
+  type        = string
+}
+
+variable "silver_bucket_name" {
+  description = "Name of the silver S3 bucket"
+  type        = string
+}
+
+variable "gold_bucket_name" {
+  description = "Name of the gold S3 bucket"
+  type        = string
+}
