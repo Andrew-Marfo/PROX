@@ -8,14 +8,17 @@ on:
 
 env:
   SCRIPTS: |
-    bronze_ingestion_script.py,bronze,/scripts/bronze_ingestion_script.py
-    transformations_script.py,bronze,/scripts/transformations_script.py
-    gold_data_curation_script.py,gold,/scripts/gold_data_curation_script.py
-    s3_to_redshift_script.py,gold,/scripts/s3_to_redshift_script.py
+    bronze_ingestion_script.py:/scripts/bronze_ingestion_script.py
+    transformations_script.py:/scripts/transformations_script.py
+    gold_data_curation_script.py:/scripts/gold_data_curation_script.py
+    s3_to_redshift_script.py:/scripts/s3_to_redshift_script.py
 
 jobs:
   deploy-glue-scripts:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./  # Adjust to your Terraform directory, e.g., aws_infra/terraform
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -35,80 +38,58 @@ jobs:
       - name: Terraform Init
         run: terraform init
 
-      - name: Debug Terraform Outputs
-        run: |
-          terraform output
-          terraform output bronze_bucket_name || echo "Failed to get bronze_bucket_name"
-          terraform output gold_bucket_name || echo "Failed to get gold_bucket_name"
-
       - name: Get bronze bucket name
         id: bronze_bucket
         run: |
           unset TF_LOG TF_LOG_PATH
-          BUCKET=$(terraform output bronze_bucket_name 2>/dev/null | grep 'bronze_bucket_name' | cut -d '"' -f 2)
+          OUTPUT=$(terraform output bronze_bucket_name 2>/dev/null || echo "failed")
+          echo "Raw output: [$OUTPUT]"
+          if [ "$OUTPUT" = "failed" ]; then
+            echo "❌ Terraform output for bronze_bucket_name failed"
+            exit 1
+          fi
+          BUCKET=$(echo "$OUTPUT" | grep '"prox-bronze-bucket"' | sed -n 's/.*"\(.*\)"/\1/p' | head -n 1 | tr -d '\n' | tr -d '\r')
+          echo "Extracted bucket: [$BUCKET]"
           if [ -z "$BUCKET" ]; then
-            echo "❌ Failed to retrieve bronze_bucket_name"
+            echo "❌ Failed to extract bronze_bucket_name"
             exit 1
           fi
           if [[ ! "$BUCKET" =~ ^[a-z0-9.-]{3,63}$ ]]; then
             echo "❌ Invalid bucket name: $BUCKET"
             exit 1
           fi
-          echo "value=$BUCKET" >> $GITHUB_OUTPUT
-
-      - name: Get gold bucket name
-        id: gold_bucket
-        run: |
-          unset TF_LOG TF_LOG_PATH
-          BUCKET=$(terraform output gold_bucket_name 2>/dev/null | grep 'gold_bucket_name' | cut -d '"' -f 2)
-          if [ -z "$BUCKET" ]; then
-            echo "❌ Failed to retrieve gold_bucket_name"
-            exit 1
-          fi
-          if [[ ! "$BUCKET" =~ ^[a-z0-9.-]{3,63}$ ]]; then
-            echo "❌ Invalid bucket name: $BUCKET"
-            exit 1
+          echo "exists=false" >> $GITHUB_OUTPUT
+          if aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null; then
+            echo "Bucket $BUCKET exists."
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Bucket $BUCKET does not exist."
           fi
           echo "value=$BUCKET" >> $GITHUB_OUTPUT
 
-      - name: Debug GITHUB_OUTPUT
+      - name: Debug Outputs
         run: |
+          echo "Bronze bucket: ${{ steps.bronze_bucket.outputs.value }} (exists: ${{ steps.bronze_bucket.outputs.exists }})"
           cat $GITHUB_OUTPUT
 
-      - name: Debug Bucket Names
-        run: |
-          echo "Bronze bucket: ${{ steps.bronze_bucket.outputs.value }}"
-          echo "Gold bucket: ${{ steps.gold_bucket.outputs.value }}"
-
       - name: Deploy Glue scripts
+        if: steps.bronze_bucket.outputs.exists == 'true'
         run: |
-          echo "$SCRIPTS" | while IFS="," read -r LOCAL BUCKET REMOTE; do
-            if [ "$BUCKET" = "bronze" ]; then
-              BUCKET_NAME="${{ steps.bronze_bucket.outputs.value }}"
-            elif [ "$BUCKET" = "gold" ]; then
-              BUCKET_NAME="${{ steps.gold_bucket.outputs.value }}"
-            else
-              echo "❌ Unknown bucket: $BUCKET"
-              exit 1
-            fi
-
-            # Check if bucket exists
-            if aws s3api head-bucket --bucket "$BUCKET_NAME" 2>/dev/null; then
-              echo "Bucket: $BUCKET_NAME exists."
-            else
-              echo "Bucket $BUCKET_NAME does not exist. Skipping $LOCAL."
+          BUCKET_NAME="${{ steps.bronze_bucket.outputs.value }}"
+          echo "SCRIPTS content: [$SCRIPTS]"
+          echo "$SCRIPTS" | while IFS=":" read -r LOCAL REMOTE; do
+            # Skip empty lines or invalid entries
+            if [ -z "$LOCAL" ] || [ -z "$REMOTE" ]; then
+              echo "Skipping empty or invalid script entry: LOCAL=[$LOCAL], REMOTE=[$REMOTE]"
               continue
             fi
-
-            # Remove existing object if it exists
+            echo "Handling script: $LOCAL -> $REMOTE"
             if aws s3 ls "s3://$BUCKET_NAME$REMOTE" 2>/dev/null; then
               echo "Deleting existing $REMOTE"
               aws s3 rm "s3://$BUCKET_NAME$REMOTE"
             else
               echo "No existing $REMOTE found"
             fi
-
-            # Upload new script
             echo "Uploading new $LOCAL to $REMOTE"
             aws s3 cp "glue_scripts/$LOCAL" "s3://$BUCKET_NAME$REMOTE" --only-show-errors
           done
