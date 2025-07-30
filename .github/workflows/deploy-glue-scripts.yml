@@ -48,7 +48,8 @@ jobs:
             echo "❌ Terraform output for bronze_bucket_name failed"
             exit 1
           fi
-          BUCKET=$(echo "$OUTPUT" | sed -n 's/.*"\(.*\)"/\1/p' | tr -d '\n' | tr -d '\r')
+          # Extract the bucket name, ignoring [command] prefix and handling multi-line output
+          BUCKET=$(echo "$OUTPUT" | grep '"prox-bronze-bucket"' | sed -n 's/.*"\(.*\)"/\1/p' | head -n 1 | tr -d '\n' | tr -d '\r')
           echo "Extracted bucket: [$BUCKET]"
           if [ -z "$BUCKET" ]; then
             echo "❌ Failed to extract bronze_bucket_name"
