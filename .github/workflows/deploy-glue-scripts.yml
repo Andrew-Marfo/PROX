@@ -20,52 +20,98 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install jq
-        run: sudo apt-get install -y jq
-
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
         with:
-          terraform_version: 1.6.6
+          terraform_version: 1.9.0
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{    secrets.AWS_REGION }}
+          aws-region: eu-west-1
 
       - name: Terraform Init
         run: terraform init
 
+      - name: Debug Terraform Outputs
+        run: |
+          terraform output
+          terraform output bronze_bucket_name || echo "Failed to get bronze_bucket_name"
+          terraform output gold_bucket_name || echo "Failed to get gold_bucket_name"
+
       - name: Get bronze bucket name
         id: bronze_bucket
-        run: echo "value=$(terraform output -raw bronze_bucket_name)" >> $GITHUB_OUTPUT
-
-      - name: Get silver bucket name
-        id: silver_bucket
-        run: echo "value=$(terraform output -raw silver_bucket_name)" >> $GITHUB_OUTPUT
+        run: |
+          unset TF_LOG TF_LOG_PATH
+          BUCKET=$(terraform output bronze_bucket_name 2>/dev/null | grep 'bronze_bucket_name' | cut -d '"' -f 2)
+          if [ -z "$BUCKET" ]; then
+            echo "❌ Failed to retrieve bronze_bucket_name"
+            exit 1
+          fi
+          if [[ ! "$BUCKET" =~ ^[a-z0-9.-]{3,63}$ ]]; then
+            echo "❌ Invalid bucket name: $BUCKET"
+            exit 1
+          fi
+          echo "value=$BUCKET" >> $GITHUB_OUTPUT
 
       - name: Get gold bucket name
         id: gold_bucket
-        run: echo "value=$(terraform output -raw gold_bucket_name)" >> $GITHUB_OUTPUT
+        run: |
+          unset TF_LOG TF_LOG_PATH
+          BUCKET=$(terraform output gold_bucket_name 2>/dev/null | grep 'gold_bucket_name' | cut -d '"' -f 2)
+          if [ -z "$BUCKET" ]; then
+            echo "❌ Failed to retrieve gold_bucket_name"
+            exit 1
+          fi
+          if [[ ! "$BUCKET" =~ ^[a-z0-9.-]{3,63}$ ]]; then
+            echo "❌ Invalid bucket name: $BUCKET"
+            exit 1
+          fi
+          echo "value=$BUCKET" >> $GITHUB_OUTPUT
 
-      - name: Deploy Glue scripts to S3
+      - name: Debug GITHUB_OUTPUT
+        run: |
+          cat $GITHUB_OUTPUT
+
+      - name: Debug Bucket Names
+        run: |
+          echo "Bronze bucket: ${{ steps.bronze_bucket.outputs.value }}"
+          echo "Gold bucket: ${{ steps.gold_bucket.outputs.value }}"
+
+      - name: Deploy Glue scripts
         run: |
           echo "$SCRIPTS" | while IFS="," read -r LOCAL BUCKET REMOTE; do
             if [ "$BUCKET" = "bronze" ]; then
               BUCKET_NAME="${{ steps.bronze_bucket.outputs.value }}"
-            elif [ "$BUCKET" = "silver" ]; then
-              BUCKET_NAME="${{ steps.silver_bucket.outputs.value }}"
             elif [ "$BUCKET" = "gold" ]; then
               BUCKET_NAME="${{ steps.gold_bucket.outputs.value }}"
             else
               echo "❌ Unknown bucket: $BUCKET"
               exit 1
             fi
-            echo "Uploading $LOCAL to s3://$BUCKET_NAME$REMOTE"
-            aws s3 cp "glue_scripts/$LOCAL" "s3://$BUCKET_NAME$REMOTE" --only-show-errors || exit 1
+
+            # Check if bucket exists
+            if aws s3api head-bucket --bucket "$BUCKET_NAME" 2>/dev/null; then
+              echo "Bucket: $BUCKET_NAME exists."
+            else
+              echo "Bucket $BUCKET_NAME does not exist. Skipping $LOCAL."
+              continue
+            fi
+
+            # Remove existing object if it exists
+            if aws s3 ls "s3://$BUCKET_NAME$REMOTE" 2>/dev/null; then
+              echo "Deleting existing $REMOTE"
+              aws s3 rm "s3://$BUCKET_NAME$REMOTE"
+            else
+              echo "No existing $REMOTE found"
+            fi
+
+            # Upload new script
+            echo "Uploading new $LOCAL to $REMOTE"
+            aws s3 cp "glue_scripts/$LOCAL" "s3://$BUCKET_NAME$REMOTE" --only-show-errors
           done
 
-      - name: Done
-        run: echo "🎉 Glue scripts deployed successfully!"
+      - name: Complete
+        run: echo "Workflow completed."
