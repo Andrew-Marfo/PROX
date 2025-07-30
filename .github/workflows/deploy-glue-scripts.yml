@@ -45,7 +45,7 @@ jobs:
         id: bronze_bucket
         run: |
           unset TF_LOG TF_LOG_PATH
-          BUCKET=$(terraform output -raw bronze_bucket_name 2>/dev/null || echo "")
+          BUCKET=$(terraform output -raw bronze_bucket_name 2>/dev/null | sed 's/::debug::Terraform exited with code 0.//')
           if [ -z "$BUCKET" ]; then
             echo "❌ Failed to retrieve bronze_bucket_name"
             exit 1
@@ -56,12 +56,17 @@ jobs:
         id: gold_bucket
         run: |
           unset TF_LOG TF_LOG_PATH
-          BUCKET=$(terraform output -raw gold_bucket_name 2>/dev/null || echo "")
+          BUCKET=$(terraform output -raw gold_bucket_name 2>/dev/null | sed 's/::debug::Terraform exited with code 0.//')
           if [ -z "$BUCKET" ]; then
             echo "❌ Failed to retrieve gold_bucket_name"
             exit 1
           fi
           echo "value=$BUCKET" >> $GITHUB_OUTPUT
+
+      - name: Debug Bucket Names
+        run: |
+          echo "Bronze bucket: ${{ steps.bronze_bucket.outputs.value }}"
+          echo "Gold bucket: ${{ steps.gold_bucket.outputs.value }}"
 
       - name: Deploy Glue scripts
         run: |
