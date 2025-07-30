@@ -23,7 +23,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
         with:
-          terraform_version: 1.6.6
+          terraform_version: 1.9.0
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -38,16 +38,20 @@ jobs:
       - name: Debug Terraform Outputs
         run: |
           terraform output
-          terraform output -raw bronze_bucket_name || echo "Failed to get bronze_bucket_name"
-          terraform output -raw gold_bucket_name || echo "Failed to get gold_bucket_name"
+          terraform output bronze_bucket_name || echo "Failed to get bronze_bucket_name"
+          terraform output gold_bucket_name || echo "Failed to get gold_bucket_name"
 
       - name: Get bronze bucket name
         id: bronze_bucket
         run: |
           unset TF_LOG TF_LOG_PATH
-          BUCKET=$(terraform output -raw bronze_bucket_name 2>/dev/null | sed 's/::debug::Terraform exited with code 0.//')
+          BUCKET=$(terraform output bronze_bucket_name 2>/dev/null | grep 'bronze_bucket_name' | cut -d '"' -f 2)
           if [ -z "$BUCKET" ]; then
             echo "❌ Failed to retrieve bronze_bucket_name"
+            exit 1
+          fi
+          if [[ ! "$BUCKET" =~ ^[a-z0-9.-]{3,63}$ ]]; then
+            echo "❌ Invalid bucket name: $BUCKET"
             exit 1
           fi
           echo "value=$BUCKET" >> $GITHUB_OUTPUT
@@ -56,12 +60,20 @@ jobs:
         id: gold_bucket
         run: |
           unset TF_LOG TF_LOG_PATH
-          BUCKET=$(terraform output -raw gold_bucket_name 2>/dev/null | sed 's/::debug::Terraform exited with code 0.//')
+          BUCKET=$(terraform output gold_bucket_name 2>/dev/null | grep 'gold_bucket_name' | cut -d '"' -f 2)
           if [ -z "$BUCKET" ]; then
             echo "❌ Failed to retrieve gold_bucket_name"
             exit 1
           fi
+          if [[ ! "$BUCKET" =~ ^[a-z0-9.-]{3,63}$ ]]; then
+            echo "❌ Invalid bucket name: $BUCKET"
+            exit 1
+          fi
           echo "value=$BUCKET" >> $GITHUB_OUTPUT
+
+      - name: Debug GITHUB_OUTPUT
+        run: |
+          cat $GITHUB_OUTPUT
 
       - name: Debug Bucket Names
         run: |
