@@ -8,64 +8,91 @@ on:
 
 env:
   SCRIPTS: |
-    bronze_ingestion_script.py,bronze,/scripts/bronze_ingestion_script.py
-    transformations_script.py,bronze,/scripts/transformations_script.py
-    gold_data_curation_script.py,gold,/scripts/gold_data_curation_script.py
-    s3_to_redshift_script.py,gold,/scripts/s3_to_redshift_script.py
+    bronze_ingestion_script.py:/scripts/bronze_ingestion_script.py
+    transformations_script.py:/scripts/transformations_script.py
+    gold_data_curation_script.py:/scripts/gold_data_curation_script.py
+    s3_to_redshift_script.py:/scripts/s3_to_redshift_script.py
 
 jobs:
   deploy-glue-scripts:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./  # Adjust to your Terraform directory, e.g., aws_infra/terraform
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install jq
-        run: sudo apt-get install -y jq
-
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
         with:
-          terraform_version: 1.6.6
+          terraform_version: 1.9.0
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{    secrets.AWS_REGION }}
+          aws-region: eu-west-1
 
       - name: Terraform Init
         run: terraform init
 
       - name: Get bronze bucket name
         id: bronze_bucket
-        run: echo "value=$(terraform output -raw bronze_bucket_name)" >> $GITHUB_OUTPUT
-
-      - name: Get silver bucket name
-        id: silver_bucket
-        run: echo "value=$(terraform output -raw silver_bucket_name)" >> $GITHUB_OUTPUT
-
-      - name: Get gold bucket name
-        id: gold_bucket
-        run: echo "value=$(terraform output -raw gold_bucket_name)" >> $GITHUB_OUTPUT
-
-      - name: Deploy Glue scripts to S3
         run: |
-          echo "$SCRIPTS" | while IFS="," read -r LOCAL BUCKET REMOTE; do
-            if [ "$BUCKET" = "bronze" ]; then
-              BUCKET_NAME="${{ steps.bronze_bucket.outputs.value }}"
-            elif [ "$BUCKET" = "silver" ]; then
-              BUCKET_NAME="${{ steps.silver_bucket.outputs.value }}"
-            elif [ "$BUCKET" = "gold" ]; then
-              BUCKET_NAME="${{ steps.gold_bucket.outputs.value }}"
-            else
-              echo "❌ Unknown bucket: $BUCKET"
-              exit 1
+          unset TF_LOG TF_LOG_PATH
+          OUTPUT=$(terraform output bronze_bucket_name 2>/dev/null || echo "failed")
+          echo "Raw output: [$OUTPUT]"
+          if [ "$OUTPUT" = "failed" ]; then
+            echo "❌ Terraform output for bronze_bucket_name failed"
+            exit 1
+          fi
+          BUCKET=$(echo "$OUTPUT" | grep '"prox-bronze-bucket"' | sed -n 's/.*"\(.*\)"/\1/p' | head -n 1 | tr -d '\n' | tr -d '\r')
+          echo "Extracted bucket: [$BUCKET]"
+          if [ -z "$BUCKET" ]; then
+            echo "❌ Failed to extract bronze_bucket_name"
+            exit 1
+          fi
+          if [[ ! "$BUCKET" =~ ^[a-z0-9.-]{3,63}$ ]]; then
+            echo "❌ Invalid bucket name: $BUCKET"
+            exit 1
+          fi
+          echo "exists=false" >> $GITHUB_OUTPUT
+          if aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null; then
+            echo "Bucket $BUCKET exists."
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Bucket $BUCKET does not exist."
+          fi
+          echo "value=$BUCKET" >> $GITHUB_OUTPUT
+
+      - name: Debug Outputs
+        run: |
+          echo "Bronze bucket: ${{ steps.bronze_bucket.outputs.value }} (exists: ${{ steps.bronze_bucket.outputs.exists }})"
+          cat $GITHUB_OUTPUT
+
+      - name: Deploy Glue scripts
+        if: steps.bronze_bucket.outputs.exists == 'true'
+        run: |
+          BUCKET_NAME="${{ steps.bronze_bucket.outputs.value }}"
+          echo "SCRIPTS content: [$SCRIPTS]"
+          echo "$SCRIPTS" | while IFS=":" read -r LOCAL REMOTE; do
+            # Skip empty lines or invalid entries
+            if [ -z "$LOCAL" ] || [ -z "$REMOTE" ]; then
+              echo "Skipping empty or invalid script entry: LOCAL=[$LOCAL], REMOTE=[$REMOTE]"
+              continue
             fi
-            echo "Uploading $LOCAL to s3://$BUCKET_NAME$REMOTE"
-            aws s3 cp "glue_scripts/$LOCAL" "s3://$BUCKET_NAME$REMOTE" --only-show-errors || exit 1
+            echo "Handling script: $LOCAL -> $REMOTE"
+            if aws s3 ls "s3://$BUCKET_NAME$REMOTE" 2>/dev/null; then
+              echo "Deleting existing $REMOTE"
+              aws s3 rm "s3://$BUCKET_NAME$REMOTE"
+            else
+              echo "No existing $REMOTE found"
+            fi
+            echo "Uploading new $LOCAL to $REMOTE"
+            aws s3 cp "glue_scripts/$LOCAL" "s3://$BUCKET_NAME$REMOTE" --only-show-errors
           done
 
-      - name: Done
-        run: echo "🎉 Glue scripts deployed successfully!"
+      - name: Complete
+        run: echo "Workflow completed."
