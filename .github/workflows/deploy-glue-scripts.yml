@@ -48,7 +48,6 @@ jobs:
             echo "❌ Terraform output for bronze_bucket_name failed"
             exit 1
           fi
-          # Extract the bucket name, ignoring [command] prefix and handling multi-line output
           BUCKET=$(echo "$OUTPUT" | grep '"prox-bronze-bucket"' | sed -n 's/.*"\(.*\)"/\1/p' | head -n 1 | tr -d '\n' | tr -d '\r')
           echo "Extracted bucket: [$BUCKET]"
           if [ -z "$BUCKET" ]; then
@@ -77,7 +76,13 @@ jobs:
         if: steps.bronze_bucket.outputs.exists == 'true'
         run: |
           BUCKET_NAME="${{ steps.bronze_bucket.outputs.value }}"
+          echo "SCRIPTS content: [$SCRIPTS]"
           echo "$SCRIPTS" | while IFS=":" read -r LOCAL REMOTE; do
+            # Skip empty lines or invalid entries
+            if [ -z "$LOCAL" ] || [ -z "$REMOTE" ]; then
+              echo "Skipping empty or invalid script entry: LOCAL=[$LOCAL], REMOTE=[$REMOTE]"
+              continue
+            fi
             echo "Handling script: $LOCAL -> $REMOTE"
             if aws s3 ls "s3://$BUCKET_NAME$REMOTE" 2>/dev/null; then
               echo "Deleting existing $REMOTE"
